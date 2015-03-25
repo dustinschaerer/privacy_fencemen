@@ -21,6 +21,8 @@ gem 'jquery-rails'
 
 gem 'high_voltage', '~> 2.2.1'
 
+gem 'newrelic_rpm'
+
 group :assets do 
   gem 'bootswatch-rails'
 end
