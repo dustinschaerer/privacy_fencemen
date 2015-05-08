@@ -1,0 +1,278 @@
+I've got lots of clients who want semi-static sites with room to grow into a fully dynamic app if business is good.  This tutorial post documents the process I've used recently from zero to deployment. 
+
+This tutorial assumes you have an account setup at github and heroku, and that you have ruby and rails both installed on your local machine. 
+
+First, check and set your ruby version, I use rbenv to manage my ruby versions.
+
+<code>$ ruby -v
+ruby 2.2.0p0 (2014-12-25 revision 49005) [x86_64-linux]</code>
+
+Good, 2.2.0 is what I want to use for the current Rails release. Let's make sure Bundler is installed, we'll need that.
+
+<code>$ bundler -v
+Bundler version 1.7.13</code>
+
+Looks good. Now let's check and make sure we have Rails 4.2 installed.
+
+<code>$ rails -v
+Rails 4.2.0</code>
+
+Perfect. Let's create our new rails app, here its called "place_setting".
+
+<code>$ rails new place_setting</code>
+
+After that finishes, pop open the Gemfile and let's add some gems. Since Rails now ships with sass, we'll start with adding 'bootstrap-sass' to include the twitter bootstrap framework. Then we'll add the gem 'high_voltage', for handling static pages.  This isn't necessary, you can easily roll this yourself, but I like the standard method <a href="https://github.com/thoughtbot/high_voltage">high_voltage</a> brings to the table.  I also like to add the 'better_errors' and 'binding_of_caller' gems to the development and test environments.  Never use those in production.  For our webserver, I'll use thin, so add that here too. I'll also have to make a Procfile to tell thin to start in production, later.  To make Heroku happy, I'll also add the gem "rails_12factor" to the production group only. Here's what I added.
+
+<code>gem 'bootstrap-sass', '~> 3.3.4'
+
+gem 'high_voltage', '~> 2.2.1'
+
+group :production do
+  gem "rails_12factor"
+end
+
+group :development, :test do
+  gem 'better_errors'
+  gem 'binding_of_caller'
+end</code>
+
+Now let's remove the cruft we don't need from the Gemfile.  Delete the following gems: sqlite3, turbolinks, jbuilder, sdoc. We aren't starting with a database, so we don't need sqlite3. We can always add postgres or whatever later. My Gemfile now looks like this:
+
+<code>source 'https://rubygems.org'
+
+ruby '2.2.0'
+
+gem 'rails', '4.2.0'
+gem 'bootstrap-sass', '~> 3.3.4'
+gem 'sass-rails', '~> 5.0'
+gem 'uglifier', '>= 1.3.0'
+gem 'coffee-rails', '~> 4.1.0'
+gem 'jquery-rails'
+gem 'high_voltage', '~> 2.2.1'
+
+group :development, :production do
+  gem 'thin', :group => 'production'
+end
+
+group :production do
+  gem "rails_12factor"
+end
+
+group :development, :test do
+  gem 'byebug'
+  gem 'web-console', '~> 2.0'
+  gem 'spring'
+  gem 'better_errors'
+  gem 'binding_of_caller'
+end</code>
+
+Let's bundle to install those gems.
+
+<code>$ bundle</code>
+
+OK, we are set to go.  First, lets strip out the extra cruft we don't need from rails yet. No database needed, so no ActiveRecord needed. Open up <code>config/application.rb</code> and replace the call to <code>require 'rails/all'</code> with:
+
+<code>require 'rails'
+require 'action_controller/railtie'</code>
+
+Also, while you've got config/application.rb open, go ahead comment out the reference to active_record
+<code>
+# Do not swallow errors in after_commit/after_rollback callbacks.
+# config.active_record.raise_in_transactional_callbacks = true
+</code>
+
+Comment out ALL the references to ActionMailer in the various <code>config/environments/</code> files since we may want it back later.
+
+<code>Comment out this in config/environments/development.rb
+
+# config.action_mailer.raise_delivery_errors = false
+
+# Raise an error on page load if there are pending migrations.
+# config.active_record.migration_error = :page_load
+
+comment out this in config/environments/test.rb
+
+# config.action_mailer.delivery_method = :test
+
+comment out this in config/environments/production.rb
+
+# config.active_record.dump_schema_after_migration = false
+# config.action_mailer.raise_delivery_errors = false</code>
+
+Time to remove other Rails cruft we don't need:
+
+<code>$ rm -rf config/database.yml public/index.html
+$ rm -rf app/{helpers,mailers,models} test/ doc/ db/</code>
+
+We removed turbolinks from our Gemfile, so we need to remove all our references to it.  Open up <code>app/views/layouts/application.rb</code> and remove the calls to turbolinks. Before:
+<code>
+<%= stylesheet_link_tag    'application', media: 'all', 'data-turbolinks-track' => true %>
+<%= javascript_include_tag 'application', 'data-turbolinks-track' => true %>
+</code>
+
+After:
+<code>
+<%= stylesheet_link_tag    'application', media: 'all' %>
+<%= javascript_include_tag 'application' %>
+</code>
+
+Next, rename <b>app/assets/stylesheets/application.css</b> to  <b>app/assets/stylesheets/application.scss</b> and delete everything inside. We need to remove all the //= require and //= require_tree statements from the file. Instead, use @import to import Sass files.  Do not use //= require in Sass or your other stylesheets will not be able to access the Bootstrap mixins or variables. <a href="https://github.com/twbs/bootstrap-sass">Read more at the "bootstrap-sass" docs</a>.  Add the following import commands.
+
+<code>
+@import "bootstrap-sprockets";
+@import "bootstrap";
+</code>
+
+Require Bootstrap Javascripts in <code>app/assets/javascripts/application.js</code>. My application.js file now now contians:
+
+<code>
+//= require jquery
+//= require bootstrap-sprockets
+//= require jquery_ujs
+//= require_tree .
+</code>
+
+Bootstrap is now added to the asset pipeline and ready for use.  Let’s add a homepage. Since this is a single-page app/site, let's just make a home page and open it up with Sublime.
+
+<code>$ mkdir app/views/pages
+$ subl app/views/pages/home.html.erb</code>
+
+Inside <code>app/views/pages/home.html.erb</code> add the following html. This will also test to see if our bootstrap is working.
+
+<code>
+  &lt;h2&gt;h2. Bootstrap heading &lt;small&gt;Secondary text&lt;/small&gt;&lt;/h2&gt;
+  &lt;button type="button" class="btn btn-primary"&gt;Left&lt;/button&gt;
+</code>
+
+We'll need a route to access the page, so in your <code>config/routes.rb</code> add the route to the high_voltage page.
+<code>root :to => 'high_voltage/pages#show', :id => 'home'</code>
+
+Let's fire up a rails server and we should see our home page.
+
+<code>$ rails s</code>
+
+Nice! Everything looks good. Let's get this under source control. 
+
+<code>$ git init</code>
+<code>$ git commit -m "Initial commit"</code>
+
+At github, create a new repo in your account.  This is aptly named place_setting. 
+
+Back in your terminal, push this up to github.
+
+<code>$ git remote add origin https://github.com/yourgithubusername/place_setting.git
+$ git push -u origin master</code>
+
+I'd also like to include the Bootswatch theme "<a href="https://bootswatch.com/flatly/">Flatly</a>" in here, so let's add that. I haven't had any luck using the bootswatch-rails gem, but it adds more than we need anyway. Let's grab the theme files we need. 
+
+<code>
+$ cd app/assets/stylesheets
+$ mkdir flatly
+$ cd flatly
+$ curl -O https://bootswatch.com/flatly/_variables.scss
+$ curl -O https://bootswatch.com/flatly/_bootswatch.scss
+</code>
+
+
+I'm also using the scrolling-nav template from <a href="https://github.com/IronSummitMedia/startbootstrap-scrolling-nav">Start Bootstrap</a>.  I only need pieces of this since I'm using gems to bring in bootstrap. The files we'll need to download and add to our project are:
+<code>
+<a href="https://github.com/IronSummitMedia/startbootstrap-scrolling-nav/blob/gh-pages/css/scrolling-nav.css">startbootstrap-scrolling-nav/css/scrolling-nav.css</a>
+<a href="https://github.com/IronSummitMedia/startbootstrap-scrolling-nav/blob/gh-pages/js/jquery.easing.min.js">startbootstrap-scrolling-nav/js/jquery.easing.min.js</a>
+<a href="https://github.com/IronSummitMedia/startbootstrap-scrolling-nav/blob/gh-pages/js/scrolling-nav.js">startbootstrap-scrolling-nav/js/scrolling-nav.js</a>
+</code>
+
+Copy those files in to your rails app into these places.
+
+<code>
+copy startbootstrap-scrolling-nav/css/scrolling-nav.css to
+app/assets/stylesheets/css/scrolling-nav.scss
+
+copy startbootstrap-scrolling-nav/js/jquery.easing.min.js to
+app/assets/javascripts/jquery.easing.min.js
+
+copy startbootstrap-scrolling-nav/js/scrolling-nav.js to
+app/assets/javascripts/scrolling-nav.js
+</code>
+
+Create a custom.scss to hold your own custom styles. Make sure you are in your rails project root first.
+
+<code>$ cd ../../../..
+$ touch app/assets/stylesheets/custom.scss</code>
+
+Now add the new bootswatch theme and nav template styles in to the asset pipeline, in app/assets/stylesheets/application.scss. And also add the reference to your own custom.scss file.
+
+<code>
+/* Import styles */
+@import "bootstrap-sprockets";
+@import "flatly/variables";
+@import "bootstrap";
+@import "flatly/bootswatch";
+@import "bootstrap/variables";
+@import "bootstrap/mixins";
+@import "scrolling-nav";
+@import "custom";
+</code>
+
+Let's incorporate the scrolling-nav template as well. It gets broken up into the <code>app/views/layouts/application.rb</code> and <code>app/views/pages/home.html.erb</code> files, and it's up on github if you want to grab them. 
+
+<p>app/views/layouts/application.rb - <a href="">app/views/layouts/application.rb</a></p>
+<p>app/views/pages/home.html.erb - <a href="">app/views/pages/home.html.erb</a></p>
+
+Since we are going to deploy to heroku, let's create our Procfile from thin at the rails root we mentioned at the very beginning. Here's a one liner:  
+<code>$ echo "web: bundle exec thin start -p \$PORT" > Procfile</code>
+
+<b>Optional:</b> If you want to precompile assets before deploying, run 
+<code>$ RAILS_ENV=production bundle exec rake assets:precompile</code>
+
+Now we are going to deploy to heroku, so first make sure you have the <a href"https://toolbelt.heroku.com/">Heroku toolbelt</a> installed locally. You check to make sure it installed like this:
+
+<code>$ heroku version
+heroku-toolbelt/3.20.0 (x86_64-linux) ruby/2.2.0</code>
+
+Cool, time to deploy.  The heroku create command will automagically create your heroku app instance and also sets your git remote url for you.
+
+<code>$ git add -A</code>
+<code>$ git commit -m "Prep to deploy" </code>
+<code>$ git push</code>
+<code>$ heroku create</code>
+<code>$ git push heroku master</code>
+
+<b>Optional:</b> To hook up your custom domain:
+<code>$ heroku domains:add www.yourdomainname.com</code>
+
+At your host, edit the DNS ZONE file.  We need a "CNAME(Alias)" and the 'Host' should be www and 'Points to' should be your Heroku address (example supermoo-bil-3411.herokuapp.com).  TTL is different based on your host and settings.
+
+Add New Relic add-on to your site:
+<code>$ heroku addons:add newrelic</code>
+
+Follow the instructions to configure New Relic monitoring. You will end up downloading a <code>newrelic.yml</code> file, that you'll add to your rails app at <code>config/new_relic.yml</code>
+
+Open the NewRelic Panel by running
+
+<code>$ heroku addons:open newrelic </code>
+
+Agree to their contract, and then  click on New Relic APM. Next, choose Ruby for the web agent to install. Follow their steps, they are self explanatory. We already added the "newrelic_npm" gem in the beginning, so don't do that again.
+
+Download the newrelic.yml file and it to your rails app root.
+
+Let's push our changes back up and redeploy:
+
+<code>$ git add -A
+$ git commit -m "Add new_relic" 
+$ git push
+$ git push heroku master</code>
+
+Now access the New Relic APM again,
+
+<code>$ heroku addons:open newrelic </code>
+
+And click on your application.  Now, in the left hand panel under Reports, choose "Availability". In the field for "Url to monitor", enter http://www.yourdomainname.com 
+
+This will ping your site frequently to keep heroku from cycling down your dyno. 
+
+
+Visit http://www.yourdomainname.com now and check out your shiny place setting. 
+
+Best of luck to you.
+
+
