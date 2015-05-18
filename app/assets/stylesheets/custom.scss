@@ -31,7 +31,7 @@ hr.star-light, hr.star-primary {
 
 @media (min-width: 768px) {
   .skills {
-    font-size: 1.75em;
+    font-size: 1.5em;
   }
   h1 {
 		text-transform: uppercase;
@@ -56,3 +56,8 @@ hr.alt {
 }
 h4 { text-align :left;}
 
+@media (min-width: 767px) {
+  .navbar {
+   padding: 0px 0px;
+ }
+}
